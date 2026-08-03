@@ -26,9 +26,18 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).send('No file uploaded.');
     }
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const workbook = XLSX.read(req.file.buffer, { 
+      type: 'buffer',
+      cellDates: true,
+      raw: false
+    });
+    
     const sheetName = workbook.SheetNames[0];
     const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    if (!sheetData || sheetData.length === 0) {
+      return res.status(400).send('Uploaded file is empty or invalid.');
+    }
 
     await DataModel.insertMany(sheetData);
     res.status(200).send('File uploaded successfully!');
