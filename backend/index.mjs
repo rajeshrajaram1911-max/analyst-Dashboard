@@ -11,7 +11,7 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const MONGO_URI = process.env.MONGO_URI || 'YOUR_MONGODB_CONNECTION_STRING_HERE';
+const MONGO_URI = process.env.MONGO_URI 
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
