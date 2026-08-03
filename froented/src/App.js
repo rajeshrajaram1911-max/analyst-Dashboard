@@ -54,7 +54,7 @@ function App() {
     setUploadStatus('Processing File...');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/upload', formData);
+      const res = await axios.post('https://analyst-dashboard-live.onrender.com', formData);
       if (res.status === 200) {
         setFile(null);
         setUploadStatus('File Uploaded Successfully!');
@@ -68,7 +68,7 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/data');
+      const res = await axios.get('https://analyst-dashboard-live.onrender.com');
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         setGlobalData(res.data);
 
@@ -87,7 +87,7 @@ function App() {
 
   const resetUpload = async () => {
     try {
-      await axios.post('http://localhost:5000/api/reset');
+      await axios.post('https://analyst-dashboard-live.onrender.com');
       setIsUploaded(false);
       setFile(null);
       setGlobalData([]);
