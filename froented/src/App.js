@@ -27,6 +27,8 @@ ChartJS.register(
   Legend
 );
 
+const API_BASE_URL = 'https://analyst-dashboard-live.onrender.com';
+
 function App() {
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
@@ -54,7 +56,7 @@ function App() {
     setUploadStatus('Processing File...');
 
     try {
-      const res = await axios.post('https://analyst-dashboard-live.onrender.com/api/upload', formData);
+      const res = await axios.post(`${API_BASE_URL}/api/upload`, formData);
       if (res.status === 200) {
         setFile(null);
         setUploadStatus('File Uploaded Successfully!');
@@ -68,7 +70,7 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get('https://analyst-dashboard-live.onrender.com/api/data');
+      const res = await axios.get(`${API_BASE_URL}/api/data`);
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         setGlobalData(res.data);
 
@@ -87,7 +89,7 @@ function App() {
 
   const resetUpload = async () => {
     try {
-      await axios.post('https://analyst-dashboard-live.onrender.com/api/reset');
+      await axios.post(`${API_BASE_URL}/api/reset`);
       setIsUploaded(false);
       setFile(null);
       setGlobalData([]);
@@ -101,8 +103,14 @@ function App() {
   };
 
   const chartColors = [
-    '#38bdf8', '#818cf8', '#34d399', '#fbbf24',
-    '#f87171', '#a855f7', '#f472b6', '#38cae4'
+    '#38bdf8',
+    '#818cf8',
+    '#34d399',
+    '#fbbf24',
+    '#f87171',
+    '#a855f7',
+    '#f472b6',
+    '#38cae4'
   ];
 
   const getChartData = () => {
@@ -195,12 +203,12 @@ function App() {
             <p>Upload your Excel (.xlsx), CSV (.csv), or JSON file to generate interactive charts.</p>
             <div className="file-drop-area" onClick={() => document.getElementById('fileInput').click()}>
               <span>{file ? file.name : 'Click to browse Excel / CSV / JSON file'}</span>
-              <input 
-                type="file" 
-                id="fileInput" 
-                accept=".xlsx, .xls, .csv, .json" 
-                onChange={handleFileChange} 
-                style={{ display: 'none' }} 
+              <input
+                type="file"
+                id="fileInput"
+                accept=".xlsx, .xls, .csv, .json"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
               />
             </div>
             <button className="btn-primary" onClick={uploadFile}>
