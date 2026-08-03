@@ -2,20 +2,23 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import multer from 'multer';
-import xlsx from 'xlsx';
+import * as XLSX from 'xlsx';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect('mongodb://127.0.0.1:27017/analyticsDB')
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+const MONGO_URI = process.env.MONGO_URI || 'YOUR_MONGODB_CONNECTION_STRING_HERE';
+
+mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
-  .catch((err) => console.log('MongoDB Error:', err));
+  .catch((err) => console.error('MongoDB Error:', err));
 
 const DataSchema = new mongoose.Schema({}, { strict: false });
-const DataModel = mongoose.model('MergedData', DataSchema);
-
-const upload = multer({ storage: multer.memoryStorage() });
+const DataModel = mongoose.model('Data', DataSchema);
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
@@ -23,29 +26,24 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).send('No file uploaded.');
     }
 
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const jsonData = xlsx.utils.sheet_to_json(sheet);
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-    if (jsonData.length === 0) {
-      return res.status(400).send('File is empty.');
-    }
-
-    await DataModel.insertMany(jsonData);
-    res.status(200).send('Data Uploaded Successfully!');
+    await DataModel.insertMany(sheetData);
+    res.status(200).send('File uploaded successfully!');
   } catch (error) {
-    console.error('Upload Error:', error);
-    res.status(500).send('Server Error during upload');
+    console.error('Upload error:', error);
+    res.status(500).send('Error uploading file');
   }
 });
 
 app.get('/api/data', async (req, res) => {
   try {
-    const data = await DataModel.find({}, { _id: 0, __v: 0 });
-    res.json(data);
+    const data = await DataModel.find();
+    res.status(200).json(data);
   } catch (error) {
-    console.error('Fetch Error:', error);
+    console.error('Fetch error:', error);
     res.status(500).send('Error fetching data');
   }
 });
@@ -55,10 +53,12 @@ app.post('/api/reset', async (req, res) => {
     await DataModel.deleteMany({});
     res.status(200).send('Data Cleared!');
   } catch (error) {
+    console.error('Reset error:', error);
     res.status(500).send('Error resetting data');
   }
 });
 
-app.listen(5000, () => {
-  console.log('Server running on http://localhost:5000');
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
