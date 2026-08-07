@@ -24,10 +24,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!MONGO_URI) throw new Error('MONGO_URI must be set in your environment variables.');
 if (!JWT_SECRET) throw new Error('JWT_SECRET must be set in your environment variables.');
 
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('MongoDB Connected'))
-  .catch((err) => console.error('MongoDB Error:', err));
-
 const UserSchema = new mongoose.Schema({
   name: { type: String, trim: true, maxlength: 100 },
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
@@ -146,4 +142,17 @@ app.post('/api/reset', requireAuth, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+const startServer = async () => {
+  try {
+    await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+    console.log('MongoDB Connected');
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  } catch (error) {
+    console.error('Unable to connect to MongoDB. Check MONGO_URI in backend/.env.');
+    console.error(error.message);
+    process.exit(1);
+  }
+};
+
+startServer();

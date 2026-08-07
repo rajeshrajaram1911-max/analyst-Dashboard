@@ -27,17 +27,51 @@ ChartJS.register(
   Legend
 );
 
-const API_BASE_URL = 'https://analyst-dashboard-live.onrender.com';
+const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('authToken') || '');
+  const [authMode, setAuthMode] = useState('login');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authStatus, setAuthStatus] = useState('');
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isUploaded, setIsUploaded] = useState(false);
+  const [showChartPicker, setShowChartPicker] = useState(false);
   const [globalData, setGlobalData] = useState([]);
   const [columns, setColumns] = useState([]);
   const [xAxis, setXAxis] = useState('');
   const [yAxis, setYAxis] = useState('');
   const [chartType, setChartType] = useState('bar');
+
+  const authConfig = () => ({ headers: { Authorization: `Bearer ${token}` } });
+
+  const handleAuth = async (event) => {
+    event.preventDefault();
+    setAuthStatus('Please wait...');
+    try {
+      const endpoint = authMode === 'login' ? 'login' : 'register';
+      const body = authMode === 'login'
+        ? { email: authEmail, password: authPassword }
+        : { name: authName, email: authEmail, password: authPassword };
+      const response = await axios.post(`${API_BASE_URL}/api/auth/${endpoint}`, body);
+      localStorage.setItem('authToken', response.data.token);
+      setToken(response.data.token);
+      setAuthStatus('');
+    } catch (error) {
+      setAuthStatus(error.response?.data?.message || 'Unable to authenticate. Please try again.');
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('authToken');
+    setToken('');
+    setIsUploaded(false);
+    setShowChartPicker(false);
+    setGlobalData([]);
+  };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -56,12 +90,14 @@ function App() {
     setUploadStatus('Processing File...');
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/upload`, formData);
+      const res = await axios.post(`${API_BASE_URL}/api/upload`, formData, authConfig());
       if (res.status === 200) {
+        const isFirstUpload = !isUploaded;
         setFile(null);
         setUploadStatus('File Uploaded Successfully!');
         await fetchData();
         setIsUploaded(true);
+        setShowChartPicker(isFirstUpload);
       }
     } catch (err) {
       setUploadStatus('Upload failed. Check backend server.');
@@ -70,17 +106,18 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/data`);
+      const res = await axios.get(`${API_BASE_URL}/api/data`, authConfig());
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         setGlobalData(res.data);
 
         const allKeys = Array.from(
           new Set(res.data.flatMap((row) => Object.keys(row)))
-        );
+        ).filter((key) => !['_id', 'userId', 'createdAt', 'updatedAt', '__v'].includes(key));
         setColumns(allKeys);
 
         setXAxis((prevX) => (prevX && allKeys.includes(prevX) ? prevX : allKeys[0] || ''));
-        setYAxis((prevY) => (prevY && allKeys.includes(prevY) ? prevY : allKeys[1] || allKeys[0] || ''));
+        const numericColumn = allKeys.find((key) => res.data.some((row) => Number.isFinite(Number(row[key]))));
+        setYAxis((prevY) => (prevY && allKeys.includes(prevY) ? prevY : numericColumn || allKeys[1] || allKeys[0] || ''));
       }
     } catch (err) {
       console.error('Data Fetch Error:', err);
@@ -89,8 +126,9 @@ function App() {
 
   const resetUpload = async () => {
     try {
-      await axios.post(`${API_BASE_URL}/api/reset`);
+      await axios.post(`${API_BASE_URL}/api/reset`, {}, authConfig());
       setIsUploaded(false);
+      setShowChartPicker(false);
       setFile(null);
       setGlobalData([]);
       setColumns([]);
@@ -196,7 +234,50 @@ function App() {
 
   return (
     <div className="app-container">
-      {!isUploaded ? (
+      {!token ? (
+        <div id="uploadScreen">
+          <form className="upload-card" onSubmit={handleAuth}>
+            <h2>Analyst Dashboard</h2>
+            <p>{authMode === 'login' ? 'Sign in to access your dashboard.' : 'Create an account to get started.'}</p>
+            {authMode === 'register' && (
+              <input
+                className="file-input-small"
+                type="text"
+                placeholder="Name"
+                value={authName}
+                onChange={(event) => setAuthName(event.target.value)}
+              />
+            )}
+            <input
+              className="file-input-small"
+              type="email"
+              placeholder="Email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              required
+            />
+            <input
+              className="file-input-small"
+              type="password"
+              placeholder="Password"
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              minLength="8"
+              required
+            />
+            <button className="btn-primary" type="submit">
+              {authMode === 'login' ? 'Sign In' : 'Create Account'}
+            </button>
+            <button className="btn-danger" type="button" onClick={() => {
+              setAuthMode(authMode === 'login' ? 'register' : 'login');
+              setAuthStatus('');
+            }}>
+              {authMode === 'login' ? 'Create an account' : 'Already have an account? Sign in'}
+            </button>
+            <span id="uploadStatus">{authStatus}</span>
+          </form>
+        </div>
+      ) : !isUploaded ? (
         <div id="uploadScreen">
           <div className="upload-card">
             <h2>Analyst Dashboard</h2>
@@ -217,6 +298,34 @@ function App() {
             <span id="uploadStatus">{uploadStatus}</span>
           </div>
         </div>
+      ) : showChartPicker ? (
+        <div id="uploadScreen">
+          <div className="upload-card chart-picker-card">
+            <h2>Choose a chart</h2>
+            <p>Select how you want to visualize your uploaded data. You can change this later.</p>
+            <div className="chart-picker-grid">
+              {[
+                ['bar', 'Bar Chart', 'Compare values across categories'],
+                ['line', 'Line Chart', 'Show changes and trends'],
+                ['pie', 'Pie Chart', 'Show category proportions'],
+                ['doughnut', 'Doughnut Chart', 'Show category proportions'],
+                ['bubble', 'Bubble Chart', 'Compare grouped values']
+              ].map(([type, title, description]) => (
+                <button
+                  className="chart-picker-option"
+                  key={type}
+                  onClick={() => {
+                    setChartType(type);
+                    setShowChartPicker(false);
+                  }}
+                >
+                  <strong>{title}</strong>
+                  <span>{description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : (
         <div id="dashboardScreen">
           <div className="sidebar">
@@ -224,6 +333,7 @@ function App() {
             <div className="total-badge">
               Total Rows Merged: {globalData.length}
             </div>
+            <button className="btn-danger" onClick={logout}>Sign Out</button>
 
             <div className="menu-group">
               <div className={`menu-item ${chartType === 'bar' ? 'active' : ''}`} onClick={() => setChartType('bar')}>Bar Chart</div>
