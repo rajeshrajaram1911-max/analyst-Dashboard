@@ -12,7 +12,7 @@ import {
   Tooltip,
   Legend
 } from 'chart.js';
-import { Bar, Line, Pie, Doughnut, Bubble } from 'react-chartjs-2';
+import { Bar, Line, Pie, Doughnut, Scatter } from 'react-chartjs-2';
 import './App.css';
 
 ChartJS.register(
@@ -44,9 +44,24 @@ function App() {
   const [columns, setColumns] = useState([]);
   const [xAxis, setXAxis] = useState('');
   const [yAxis, setYAxis] = useState('');
-  const [chartType, setChartType] = useState('bar');
+  const [chartType, setChartType] = useState('clusteredBar');
 
   const authConfig = () => ({ headers: { Authorization: `Bearer ${token}` } });
+
+  const handleAuthFailure = (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('authToken');
+      setToken('');
+      setIsUploaded(false);
+      setShowChartPicker(false);
+      setGlobalData([]);
+      setColumns([]);
+      setFile(null);
+      setAuthStatus(error.response?.data?.message || 'Your session has expired. Please sign in again.');
+      return true;
+    }
+    return false;
+  };
 
   const handleAuth = async (event) => {
     event.preventDefault();
@@ -100,7 +115,9 @@ function App() {
         setShowChartPicker(isFirstUpload);
       }
     } catch (err) {
-      setUploadStatus('Upload failed. Check backend server.');
+      if (!handleAuthFailure(err)) {
+        setUploadStatus(err.response?.data?.message || 'Upload failed. Check backend server.');
+      }
     }
   };
 
@@ -119,7 +136,9 @@ function App() {
         setYAxis((prevY) => (prevY && allKeys.includes(prevY) ? prevY : ''));
       }
     } catch (err) {
-      console.error('Data Fetch Error:', err);
+      if (!handleAuthFailure(err)) {
+        console.error('Data Fetch Error:', err);
+      }
     }
   };
 
@@ -135,7 +154,9 @@ function App() {
       setYAxis('');
       setUploadStatus('');
     } catch (err) {
-      console.error(err);
+      if (!handleAuthFailure(err)) {
+        console.error(err);
+      }
     }
   };
 
@@ -166,17 +187,17 @@ function App() {
       return isNaN(num) ? 0 : num;
     });
 
-    if (chartType === 'bubble') {
+    if (chartType === 'scatter') {
       return {
         datasets: [
           {
             label: `${yAxis} vs ${xAxis}`,
             data: globalData.map((row, idx) => ({
-              x: idx,
+              x: Number.isFinite(Number(row[xAxis])) ? Number(row[xAxis]) : idx + 1,
               y: Number(row[yAxis]) || 0,
-              r: 10
             })),
-            backgroundColor: '#38bdf8'
+            backgroundColor: '#38bdf8',
+            pointRadius: 6,
           }
         ]
       };
@@ -304,11 +325,11 @@ function App() {
             <p>Select how you want to visualize your uploaded data. You can change this later.</p>
             <div className="chart-picker-grid">
               {[
-                ['bar', 'Bar Chart', 'Compare values across categories'],
+                ['clusteredBar', 'Clustered Bar Chart', 'Compare values across categories'],
                 ['line', 'Line Chart', 'Show changes and trends'],
                 ['pie', 'Pie Chart', 'Show category proportions'],
                 ['doughnut', 'Doughnut Chart', 'Show category proportions'],
-                ['bubble', 'Bubble Chart', 'Compare grouped values']
+                ['scatter', 'Scatter Chart', 'Compare the relationship between two values']
               ].map(([type, title, description]) => (
                 <button
                   className="chart-picker-option"
@@ -335,11 +356,11 @@ function App() {
             <button className="btn-danger" onClick={logout}>Sign Out</button>
 
             <div className="menu-group">
-              <div className={`menu-item ${chartType === 'bar' ? 'active' : ''}`} onClick={() => setChartType('bar')}>Bar Chart</div>
+              <div className={`menu-item ${chartType === 'clusteredBar' ? 'active' : ''}`} onClick={() => setChartType('clusteredBar')}>Clustered Bar</div>
               <div className={`menu-item ${chartType === 'line' ? 'active' : ''}`} onClick={() => setChartType('line')}>Line Chart</div>
               <div className={`menu-item ${chartType === 'pie' ? 'active' : ''}`} onClick={() => setChartType('pie')}>Pie Chart</div>
               <div className={`menu-item ${chartType === 'doughnut' ? 'active' : ''}`} onClick={() => setChartType('doughnut')}>Doughnut</div>
-              <div className={`menu-item ${chartType === 'bubble' ? 'active' : ''}`} onClick={() => setChartType('bubble')}>Bubble Chart</div>
+              <div className={`menu-item ${chartType === 'scatter' ? 'active' : ''}`} onClick={() => setChartType('scatter')}>Scatter Chart</div>
             </div>
 
             <div className="sidebar-action-box">
@@ -380,11 +401,11 @@ function App() {
             <div className="chart-card">
               {globalData.length > 0 && xAxis && yAxis ? (
                 <>
-                  {chartType === 'bar' && <Bar data={getChartData()} options={chartOptions} />}
+                  {chartType === 'clusteredBar' && <Bar data={getChartData()} options={chartOptions} />}
                   {chartType === 'line' && <Line data={getChartData()} options={chartOptions} />}
                   {chartType === 'pie' && <Pie data={getChartData()} options={chartOptions} />}
                   {chartType === 'doughnut' && <Doughnut data={getChartData()} options={chartOptions} />}
-                  {chartType === 'bubble' && <Bubble data={getChartData()} options={chartOptions} />}
+                  {chartType === 'scatter' && <Scatter data={getChartData()} options={chartOptions} />}
                 </>
               ) : (
                 <p style={{ textAlign: 'center', marginTop: '100px', color: '#94a3b8' }}>
