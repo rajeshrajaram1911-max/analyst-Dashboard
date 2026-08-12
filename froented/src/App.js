@@ -115,9 +115,8 @@ function App() {
         ).filter((key) => !['_id', 'userId', 'createdAt', 'updatedAt', '__v'].includes(key));
         setColumns(allKeys);
 
-        setXAxis((prevX) => (prevX && allKeys.includes(prevX) ? prevX : allKeys[0] || ''));
-        const numericColumn = allKeys.find((key) => res.data.some((row) => Number.isFinite(Number(row[key]))));
-        setYAxis((prevY) => (prevY && allKeys.includes(prevY) ? prevY : numericColumn || allKeys[1] || allKeys[0] || ''));
+        setXAxis((prevX) => (prevX && allKeys.includes(prevX) ? prevX : ''));
+        setYAxis((prevY) => (prevY && allKeys.includes(prevY) ? prevY : ''));
       }
     } catch (err) {
       console.error('Data Fetch Error:', err);
@@ -360,6 +359,7 @@ function App() {
               <div className="control-group">
                 <label>X-Axis Property (Label Column)</label>
                 <select value={xAxis} onChange={(e) => setXAxis(e.target.value)}>
+                  <option value="" disabled>Select X-axis column</option>
                   {columns.map((col) => (
                     <option key={col} value={col}>{col}</option>
                   ))}
@@ -369,6 +369,7 @@ function App() {
               <div className="control-group">
                 <label>Y-Axis Property (Value Column)</label>
                 <select value={yAxis} onChange={(e) => setYAxis(e.target.value)}>
+                  <option value="" disabled>Select Y-axis column</option>
                   {columns.map((col) => (
                     <option key={col} value={col}>{col}</option>
                   ))}
