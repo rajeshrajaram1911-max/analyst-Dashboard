@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Chart as ChartJS,
@@ -10,9 +10,10 @@ import {
   ArcElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 } from 'chart.js';
-import { Bar, Line, Pie, Doughnut, Scatter } from 'react-chartjs-2';
+import { Bar, Line, Pie, Doughnut, Bubble } from 'react-chartjs-2';
 import './App.css';
 
 ChartJS.register(
@@ -24,10 +25,64 @@ ChartJS.register(
   ArcElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );
 
 const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const toNumber = (value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const normalized = value.replace(/[$,\s]/g, '').replace(/%$/, '');
+  if (!normalized || normalized === '-') return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+};
+
+const isNumericColumn = (rows, column) => {
+  const values = rows.map((row) => row[column]).filter((value) => value !== '' && value !== null && value !== undefined);
+  return values.length > 0 && values.filter((value) => toNumber(value) !== null).length / values.length >= 0.8;
+};
+
+const isDateColumn = (rows, column) => {
+  const values = rows.map((row) => row[column]).filter((value) => value !== '' && value !== null && value !== undefined);
+  if (!values.length || isNumericColumn(rows, column)) return false;
+  const dateValues = values.filter((value) => !Number.isNaN(Date.parse(String(value))));
+  return dateValues.length / values.length >= 0.8;
+};
+
+const getChartRecommendations = (rows, columns, xAxis, yAxis) => {
+  if (!rows.length || !xAxis || !yAxis) return [];
+
+  const uniqueXValues = new Set(rows.map((row) => String(row[xAxis] ?? '')).filter(Boolean)).size;
+  const numericColumns = columns.filter((column) => isNumericColumn(rows, column));
+  const recommendations = [];
+
+  if (isDateColumn(rows, xAxis)) {
+    recommendations.push({ type: 'line', title: 'Line chart', reason: 'Your X-axis contains dates, so this will show change over time clearly.' });
+  } else if (isNumericColumn(rows, xAxis) && numericColumns.length >= 2) {
+    recommendations.push({ type: 'bubble', title: 'Bubble chart', reason: 'Both selected axes are numeric, making this useful for comparing their relationship.' });
+  } else {
+    recommendations.push({ type: 'clusteredBar', title: 'Bar chart', reason: 'Your data compares a numeric value across categories, which is easiest to scan as bars.' });
+  }
+
+  if (!isNumericColumn(rows, xAxis) && uniqueXValues > 1 && uniqueXValues <= 8) {
+    recommendations.push({ type: 'doughnut', title: 'Doughnut chart', reason: 'There are only a few categories, so proportions can be compared without becoming cluttered.' });
+  }
+
+  return recommendations;
+};
+
+const ChartPreview = ({ type }) => (
+  <div className={`chart-preview chart-preview-${type}`} aria-hidden="true">
+    {type === 'clusteredBar' && <><i /><i /><i /><i /><i /></>}
+    {type === 'line' && <svg viewBox="0 0 180 80" preserveAspectRatio="none"><polyline points="5,61 38,43 70,52 109,20 143,33 175,9" /></svg>}
+    {type === 'pie' && <span className="preview-pie" />}
+    {type === 'doughnut' && <span className="preview-doughnut" />}
+    {type === 'bubble' && <><i /><i /><i /><i /><i /></>}
+  </div>
+);
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('authToken') || '');
@@ -39,6 +94,7 @@ function App() {
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isUploaded, setIsUploaded] = useState(false);
+  const [showUploadScreen, setShowUploadScreen] = useState(false);
   const [showChartPicker, setShowChartPicker] = useState(false);
   const [globalData, setGlobalData] = useState([]);
   const [columns, setColumns] = useState([]);
@@ -53,6 +109,7 @@ function App() {
       localStorage.removeItem('authToken');
       setToken('');
       setIsUploaded(false);
+      setShowUploadScreen(false);
       setShowChartPicker(false);
       setGlobalData([]);
       setColumns([]);
@@ -84,6 +141,7 @@ function App() {
     localStorage.removeItem('authToken');
     setToken('');
     setIsUploaded(false);
+    setShowUploadScreen(false);
     setShowChartPicker(false);
     setGlobalData([]);
   };
@@ -109,9 +167,12 @@ function App() {
       if (res.status === 200) {
         const isFirstUpload = !isUploaded;
         setFile(null);
-        setUploadStatus('File Uploaded Successfully!');
+        setUploadStatus(`File uploaded successfully — ${res.data.rows} rows loaded.`);
+        setXAxis('');
+        setYAxis('');
         await fetchData();
         setIsUploaded(true);
+        setShowUploadScreen(false);
         setShowChartPicker(isFirstUpload);
       }
     } catch (err) {
@@ -132,8 +193,6 @@ function App() {
         ).filter((key) => !['_id', 'userId', 'createdAt', 'updatedAt', '__v'].includes(key));
         setColumns(allKeys);
 
-        setXAxis((prevX) => (prevX && allKeys.includes(prevX) ? prevX : ''));
-        setYAxis((prevY) => (prevY && allKeys.includes(prevY) ? prevY : ''));
       }
     } catch (err) {
       if (!handleAuthFailure(err)) {
@@ -146,6 +205,7 @@ function App() {
     try {
       await axios.post(`${API_BASE_URL}/api/reset`, {}, authConfig());
       setIsUploaded(false);
+      setShowUploadScreen(false);
       setShowChartPicker(false);
       setFile(null);
       setGlobalData([]);
@@ -171,6 +231,19 @@ function App() {
     '#38cae4'
   ];
 
+  useEffect(() => {
+    if (!globalData.length || !columns.length) return;
+
+    const numericColumns = columns.filter((column) => isNumericColumn(globalData, column));
+    const defaultY = numericColumns[0] || '';
+    const defaultX = columns.find((column) => column !== defaultY && !numericColumns.includes(column))
+      || columns.find((column) => column !== defaultY)
+      || '';
+
+    setXAxis((current) => (current && columns.includes(current) ? current : defaultX));
+    setYAxis((current) => (current && numericColumns.includes(current) ? current : defaultY));
+  }, [globalData, columns]);
+
   const getChartData = () => {
     if (!xAxis || !yAxis || globalData.length === 0) {
       return { labels: [], datasets: [] };
@@ -182,22 +255,20 @@ function App() {
     });
 
     const values = globalData.map((row) => {
-      const val = row[yAxis];
-      const num = Number(val);
-      return isNaN(num) ? 0 : num;
+      return toNumber(row[yAxis]) ?? 0;
     });
 
-    if (chartType === 'scatter') {
+    if (chartType === 'bubble') {
       return {
         datasets: [
           {
             label: `${yAxis} vs ${xAxis}`,
             data: globalData.map((row, idx) => ({
-              x: Number.isFinite(Number(row[xAxis])) ? Number(row[xAxis]) : idx + 1,
-              y: Number(row[yAxis]) || 0,
+              x: toNumber(row[xAxis]) ?? idx + 1,
+              y: toNumber(row[yAxis]) ?? 0,
+              r: 10,
             })),
             backgroundColor: '#38bdf8',
-            pointRadius: 6,
           }
         ]
       };
@@ -211,13 +282,22 @@ function App() {
           data: values,
           backgroundColor: chartType === 'line' ? 'rgba(56, 189, 248, 0.2)' : chartColors,
           borderColor: '#38bdf8',
-          borderWidth: 2,
-          fill: chartType === 'line',
-          tension: 0.3
+          borderWidth: chartType === 'line' ? 3 : 2,
+          fill: false,
+          tension: 0.3,
+          pointBackgroundColor: '#f8fafc',
+          pointBorderColor: '#38bdf8',
+          pointBorderWidth: chartType === 'line' ? 2 : 0,
+          pointRadius: chartType === 'line' ? 4 : 0,
+          pointHoverRadius: chartType === 'line' ? 6 : 0,
         }
       ]
     };
   };
+
+  const hasNumericYAxis = yAxis && isNumericColumn(globalData, yAxis);
+  const chartRecommendations = getChartRecommendations(globalData, columns, xAxis, yAxis);
+  const isPartToWholeChart = chartType === 'pie' || chartType === 'doughnut';
 
   const chartOptions = {
     responsive: true,
@@ -242,6 +322,7 @@ function App() {
         ? {}
         : {
             x: {
+              type: chartType === 'bubble' ? 'linear' : 'category',
               ticks: { color: '#94a3b8' },
               grid: { color: 'rgba(255, 255, 255, 0.05)' }
             },
@@ -256,12 +337,12 @@ function App() {
     <div className="app-container">
       {!token ? (
         <div id="uploadScreen">
-          <form className="upload-card" onSubmit={handleAuth}>
+          <form className="upload-card auth-card" onSubmit={handleAuth}>
             <h2>Analyst Dashboard</h2>
             <p>{authMode === 'login' ? 'Sign in to access your dashboard.' : 'Create an account to get started.'}</p>
             {authMode === 'register' && (
               <input
-                className="file-input-small"
+                className="auth-input"
                 type="text"
                 placeholder="Name"
                 value={authName}
@@ -269,20 +350,22 @@ function App() {
               />
             )}
             <input
-              className="file-input-small"
+              className="auth-input"
               type="email"
               placeholder="Email"
               value={authEmail}
               onChange={(event) => setAuthEmail(event.target.value)}
+              autoComplete="email"
               required
             />
             <input
-              className="file-input-small"
+              className="auth-input"
               type="password"
               placeholder="Password"
               value={authPassword}
               onChange={(event) => setAuthPassword(event.target.value)}
               minLength="8"
+              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
               required
             />
             <button className="btn-primary" type="submit">
@@ -297,7 +380,7 @@ function App() {
             <span id="uploadStatus">{authStatus}</span>
           </form>
         </div>
-      ) : !isUploaded ? (
+      ) : !isUploaded && showUploadScreen ? (
         <div id="uploadScreen">
           <div className="upload-card">
             <h2>Analyst Dashboard</h2>
@@ -315,6 +398,9 @@ function App() {
             <button className="btn-primary" onClick={uploadFile}>
               Process & Launch
             </button>
+            <button className="btn-secondary" onClick={() => setShowUploadScreen(false)}>
+              Back to dashboard
+            </button>
             <span id="uploadStatus">{uploadStatus}</span>
           </div>
         </div>
@@ -329,7 +415,7 @@ function App() {
                 ['line', 'Line Chart', 'Show changes and trends'],
                 ['pie', 'Pie Chart', 'Show category proportions'],
                 ['doughnut', 'Doughnut Chart', 'Show category proportions'],
-                ['scatter', 'Scatter Chart', 'Compare the relationship between two values']
+                ['bubble', 'Bubble Chart', 'Compare relationships between values']
               ].map(([type, title, description]) => (
                 <button
                   className="chart-picker-option"
@@ -339,6 +425,7 @@ function App() {
                     setShowChartPicker(false);
                   }}
                 >
+                  <ChartPreview type={type} />
                   <strong>{title}</strong>
                   <span>{description}</span>
                 </button>
@@ -351,36 +438,37 @@ function App() {
           <div className="sidebar">
             <h2>ANALYTICS</h2>
             <div className="total-badge">
-              Total Rows Merged: {globalData.length}
+              Total Rows Merged: {globalData.length || 0}
             </div>
+            {!isUploaded && <button className="btn-primary upload-data-button" onClick={() => setShowUploadScreen(true)}>Upload data</button>}
             <button className="btn-danger" onClick={logout}>Sign Out</button>
 
-            <div className="menu-group">
+            {isUploaded && <div className="menu-group">
               <div className={`menu-item ${chartType === 'clusteredBar' ? 'active' : ''}`} onClick={() => setChartType('clusteredBar')}>Clustered Bar</div>
               <div className={`menu-item ${chartType === 'line' ? 'active' : ''}`} onClick={() => setChartType('line')}>Line Chart</div>
               <div className={`menu-item ${chartType === 'pie' ? 'active' : ''}`} onClick={() => setChartType('pie')}>Pie Chart</div>
               <div className={`menu-item ${chartType === 'doughnut' ? 'active' : ''}`} onClick={() => setChartType('doughnut')}>Doughnut</div>
-              <div className={`menu-item ${chartType === 'scatter' ? 'active' : ''}`} onClick={() => setChartType('scatter')}>Scatter Chart</div>
-            </div>
+              <div className={`menu-item ${chartType === 'bubble' ? 'active' : ''}`} onClick={() => setChartType('bubble')}>Bubble Chart</div>
+            </div>}
 
-            <div className="sidebar-action-box">
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>Merge Another File:</p>
+            {isUploaded && <div className="sidebar-action-box">
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>Replace current data:</p>
               <input type="file" accept=".xlsx, .xls, .csv, .json" className="file-input-small" onChange={handleFileChange} />
               <button className="btn-primary" onClick={uploadFile} style={{ marginBottom: '10px' }}>
-                + Add / Merge File
+                Upload new file
               </button>
               <button className="btn-danger" onClick={resetUpload}>
                 Clear All Data
               </button>
-            </div>
+            </div>}
           </div>
 
           <div className="main-content">
-            <div className="controls-card">
+            {isUploaded && <div className="controls-card">
               <div className="control-group">
-                <label>X-Axis Property (Label Column)</label>
+                <label>{isPartToWholeChart ? 'Category (slice labels)' : 'X-Axis Property (label column)'}</label>
                 <select value={xAxis} onChange={(e) => setXAxis(e.target.value)}>
-                  <option value="" disabled>Select X-axis column</option>
+                  <option value="" disabled>{isPartToWholeChart ? 'Select category column' : 'Select X-axis column'}</option>
                   {columns.map((col) => (
                     <option key={col} value={col}>{col}</option>
                   ))}
@@ -388,28 +476,64 @@ function App() {
               </div>
 
               <div className="control-group">
-                <label>Y-Axis Property (Value Column)</label>
+                <label>{isPartToWholeChart ? 'Value (slice size)' : 'Y-Axis Property (numeric value column)'}</label>
                 <select value={yAxis} onChange={(e) => setYAxis(e.target.value)}>
-                  <option value="" disabled>Select Y-axis column</option>
+                  <option value="" disabled>{isPartToWholeChart ? 'Select numeric value column' : 'Select Y-axis column'}</option>
                   {columns.map((col) => (
                     <option key={col} value={col}>{col}</option>
                   ))}
                 </select>
               </div>
-            </div>
+              <p className="control-hint">
+                {isPartToWholeChart
+                  ? 'Each category becomes a slice. Its numeric value determines the slice size; use this only for a small number of categories.'
+                  : chartType === 'bubble'
+                    ? 'Choose two numeric columns. X and Y position each bubble to show the relationship between values.'
+                    : 'Choose a label column and a numeric value column to build your chart.'}
+              </p>
+            </div>}
+
+            {isUploaded && chartRecommendations.length > 0 && (
+              <section className="smart-recommendations" aria-label="Smart chart recommendations">
+                <div>
+                  <span className="recommendation-label">SMART RECOMMENDATION</span>
+                  <h3>{chartRecommendations[0].title}</h3>
+                  <p>{chartRecommendations[0].reason}</p>
+                </div>
+                <div className="recommendation-actions">
+                  {chartRecommendations.map((recommendation) => (
+                    <button
+                      key={recommendation.type}
+                      className={`recommendation-button ${chartType === recommendation.type ? 'selected' : ''}`}
+                      onClick={() => setChartType(recommendation.type)}
+                      title={recommendation.reason}
+                    >
+                      Use {recommendation.title}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <div className="chart-card">
-              {globalData.length > 0 && xAxis && yAxis ? (
+              {!isUploaded ? (
+                <div className="empty-dashboard">
+                  <span className="empty-dashboard-icon">+</span>
+                  <h1>Your dashboard is ready</h1>
+                  <p>Upload an Excel, CSV, or JSON file to start exploring your data with interactive charts.</p>
+                  <button className="btn-primary" onClick={() => setShowUploadScreen(true)}>Upload data</button>
+                </div>
+              ) : globalData.length > 0 && xAxis && hasNumericYAxis ? (
                 <>
                   {chartType === 'clusteredBar' && <Bar data={getChartData()} options={chartOptions} />}
                   {chartType === 'line' && <Line data={getChartData()} options={chartOptions} />}
                   {chartType === 'pie' && <Pie data={getChartData()} options={chartOptions} />}
                   {chartType === 'doughnut' && <Doughnut data={getChartData()} options={chartOptions} />}
-                  {chartType === 'scatter' && <Scatter data={getChartData()} options={chartOptions} />}
+                  {chartType === 'bubble' && <Bubble data={getChartData()} options={chartOptions} />}
                 </>
               ) : (
                 <p style={{ textAlign: 'center', marginTop: '100px', color: '#94a3b8' }}>
-                  No data available to display chart.
+                  Select a label column for X-axis and a numeric column for Y-axis to display the chart.
                 </p>
               )}
             </div>

@@ -114,8 +114,11 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
     const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
     if (!sheetData?.length) return res.status(400).send('Uploaded file is empty or invalid.');
 
+    // Each upload represents the current dataset. Remove the previous file's
+    // rows so charts never mix values from different uploads.
+    await DataModel.deleteMany({ userId: req.user.userId });
     await DataModel.insertMany(sheetData.map((row) => ({ ...row, userId: req.user.userId })));
-    return res.status(200).send('File uploaded successfully!');
+    return res.status(200).json({ message: 'File uploaded successfully!', rows: sheetData.length });
   } catch (error) {
     console.error('Upload error:', error);
     return res.status(500).send('Error uploading file');
