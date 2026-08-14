@@ -149,6 +149,7 @@ function App() {
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
+      setUploadStatus('');
     }
   };
 
@@ -452,7 +453,7 @@ function App() {
             </div>}
 
             {isUploaded && <div className="sidebar-action-box">
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>Replace current data:</p>
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>Upload another file to merge it with the current data:</p>
               <input type="file" accept=".xlsx, .xls, .csv, .json" className="file-input-small" onChange={handleFileChange} />
               <button className="btn-primary" onClick={uploadFile} style={{ marginBottom: '10px' }}>
                 Upload new file
