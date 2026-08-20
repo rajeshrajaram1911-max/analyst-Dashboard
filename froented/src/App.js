@@ -96,6 +96,8 @@ function App() {
   const [isUploaded, setIsUploaded] = useState(false);
   const [showUploadScreen, setShowUploadScreen] = useState(false);
   const [showChartPicker, setShowChartPicker] = useState(false);
+  const [showMergePrompt, setShowMergePrompt] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
   const [globalData, setGlobalData] = useState([]);
   const [columns, setColumns] = useState([]);
   const [xAxis, setXAxis] = useState('');
@@ -153,14 +155,22 @@ function App() {
     }
   };
 
-  const uploadFile = async () => {
-    if (!file) {
+  const uploadFile = async (mode = 'merge', skipPrompt = false, fileToUpload = null) => {
+    const fileToUse = fileToUpload || file;
+    if (!fileToUse) {
       setUploadStatus('Please select an Excel, CSV, or JSON file.');
       return;
     }
 
+    if (isUploaded && !skipPrompt) {
+      setPendingFile(fileToUse);
+      setShowMergePrompt(true);
+      return;
+    }
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', fileToUse);
+    formData.append('mode', mode);
     setUploadStatus('Processing File...');
 
     try {
@@ -168,6 +178,8 @@ function App() {
       if (res.status === 200) {
         const isFirstUpload = !isUploaded;
         setFile(null);
+        setPendingFile(null);
+        setShowMergePrompt(false);
         setUploadStatus(`File uploaded successfully — ${res.data.rows} rows loaded.`);
         setXAxis('');
         setYAxis('');
@@ -181,6 +193,14 @@ function App() {
         setUploadStatus(err.response?.data?.message || 'Upload failed. Check backend server.');
       }
     }
+  };
+
+  const handleMergeChoice = (mode) => {
+    setShowMergePrompt(false);
+    const fileToUpload = pendingFile;
+    setPendingFile(null);
+    setFile(null);
+    uploadFile(mode, true, fileToUpload);
   };
 
   const fetchData = async () => {
@@ -208,6 +228,8 @@ function App() {
       setIsUploaded(false);
       setShowUploadScreen(false);
       setShowChartPicker(false);
+      setShowMergePrompt(false);
+      setPendingFile(null);
       setFile(null);
       setGlobalData([]);
       setColumns([]);
@@ -336,6 +358,29 @@ function App() {
 
   return (
     <div className="app-container">
+      {showMergePrompt && (
+        <div className="merge-prompt-overlay">
+          <div className="merge-prompt-card">
+            <h2>Upload Options</h2>
+            <p>You already have {globalData.length} rows of data. How would you like to handle the new file?</p>
+            <div className="merge-prompt-actions">
+              <button className="btn-primary" onClick={() => handleMergeChoice('merge')}>
+                Merge with existing data
+              </button>
+              <button className="btn-danger" onClick={() => handleMergeChoice('replace')}>
+                Replace existing data
+              </button>
+              <button className="btn-secondary" onClick={() => {
+                setShowMergePrompt(false);
+                setPendingFile(null);
+                setFile(null);
+              }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {!token ? (
         <div id="uploadScreen">
           <form className="upload-card auth-card" onSubmit={handleAuth}>
@@ -443,6 +488,9 @@ function App() {
             </div>
             {!isUploaded && <button className="btn-primary upload-data-button" onClick={() => setShowUploadScreen(true)}>Upload data</button>}
             <button className="btn-danger" onClick={logout}>Sign Out</button>
+            <a href="https://github.com/rajeshrajaram1911-max/analyst-Dashboard" target="_blank" rel="noopener noreferrer" className="github-link">
+              View on GitHub
+            </a>
 
             {isUploaded && <div className="menu-group">
               <div className={`menu-item ${chartType === 'clusteredBar' ? 'active' : ''}`} onClick={() => setChartType('clusteredBar')}>Clustered Bar</div>
@@ -453,7 +501,7 @@ function App() {
             </div>}
 
             {isUploaded && <div className="sidebar-action-box">
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>Upload another file to merge it with the current data:</p>
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>Upload another file. You'll be asked whether to merge or replace the current data:</p>
               <input type="file" accept=".xlsx, .xls, .csv, .json" className="file-input-small" onChange={handleFileChange} />
               <button className="btn-primary" onClick={uploadFile} style={{ marginBottom: '10px' }}>
                 Upload new file

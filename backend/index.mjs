@@ -114,11 +114,14 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
     const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
     if (!sheetData?.length) return res.status(400).send('Uploaded file is empty or invalid.');
 
-    // Keep existing rows for this user so every newly uploaded file is merged
-    // into the current dataset. The reset endpoint remains the explicit way
-    // to clear all uploaded data.
+    const mode = req.body.mode === 'replace' ? 'replace' : 'merge';
+
+    if (mode === 'replace') {
+      await DataModel.deleteMany({ userId: req.user.userId });
+    }
+
     await DataModel.insertMany(sheetData.map((row) => ({ ...row, userId: req.user.userId })));
-    return res.status(200).json({ message: 'File uploaded successfully!', rows: sheetData.length });
+    return res.status(200).json({ message: 'File uploaded successfully!', rows: sheetData.length, mode });
   } catch (error) {
     console.error('Upload error:', error);
     return res.status(500).send('Error uploading file');
